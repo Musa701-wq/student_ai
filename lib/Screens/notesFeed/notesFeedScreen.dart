@@ -1,18 +1,20 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:student_ai/config/app_links.dart';
-import 'package:student_ai/services/adService.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../Providers/notesProvider.dart';
 import '../../config/creditConfig.dart';
 import '../../models/notesModel.dart';
+import '../../services/adService.dart';
 import '../../services/creditService.dart';
 import '../../widgets/showNotes/noteCard.dart';
+import '../AuthWrapper.dart';
 import '../addnotes/add_notes_screen.dart';
-import '../authwrapper.dart';
 import '../notesFeed/showNotesDetail.dart';
 
 class NotesFeedScreen extends StatefulWidget {
@@ -27,6 +29,9 @@ class _NotesFeedScreenState extends State<NotesFeedScreen> {
   bool showFavOnly = false;
   String searchQuery = '';
   User? _currentUser;
+  BannerAd? _bannerAd;
+  bool _isPro = false;
+  StreamSubscription? _proSub;
 
   @override
   void initState() {
@@ -45,11 +50,37 @@ class _NotesFeedScreenState extends State<NotesFeedScreen> {
         if (provider.hasMore) provider.loadNotes(query: searchQuery);
       }
     });
+
+    _checkProStatus();
+  }
+
+  void _checkProStatus() {
+    if (_currentUser == null) return;
+    _proSub = FirebaseFirestore.instance.collection('users').doc(_currentUser!.uid).snapshots().listen((snap) {
+      if (snap.exists) {
+        setState(() {
+          _isPro = snap.data()?['isPro'] ?? false;
+          if (_isPro) {
+            _bannerAd?.dispose();
+            _bannerAd = null;
+          } else if (_bannerAd == null) {
+            _loadBanner();
+          }
+        });
+      }
+    });
+  }
+
+  void _loadBanner() {
+    _bannerAd = AdService.createBannerAd();
+    setState(() {});
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _bannerAd?.dispose();
+    _proSub?.cancel();
     super.dispose();
   }
 
@@ -639,6 +670,19 @@ class _NotesFeedScreenState extends State<NotesFeedScreen> {
 
         return Scaffold(
           backgroundColor: backgroundColor,
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_bannerAd != null && !_isPro)
+                SafeArea(
+                  child: SizedBox(
+                    width: _bannerAd!.size.width.toDouble(),
+                    height: _bannerAd!.size.height.toDouble(),
+                    child: AdWidget(ad: _bannerAd!),
+                  ),
+                ),
+            ],
+          ),
           body: NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) {
               return [

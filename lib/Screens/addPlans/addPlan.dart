@@ -653,28 +653,10 @@ class _AiPlannerScreenState extends State<AiPlannerScreen>
 
     Map<String, dynamic> planJson;
 
-    try {
-      // Step 1: Clean raw JSON string from AI
-      String raw = plannerProvider.studyPlan!.trim();
-
-      // Remove Markdown code blocks ``` or ```json
-      if (raw.startsWith('```')) {
-        final lines = raw.split('\n');
-        lines.removeAt(0); // remove first ``` or ```json
-        if (lines.isNotEmpty && lines.last.trim() == '```') lines.removeLast(); // remove closing ```
-        raw = lines.join('\n');
-      }
-
-      // Remove newlines and extra spaces
-      raw = raw.replaceAll('\n', '').trim();
-
-      // Fix trailing commas in objects/arrays
-      raw = raw.replaceAll(RegExp(r',\s*}'), '}');
-      raw = raw.replaceAll(RegExp(r',\s*]'), ']');
-
-      // Step 2: Parse JSON
-      planJson = jsonDecode(raw);
-    } catch (e) {
+    // Step 2: Parse JSON using the provider's robust method
+    final parsedPlan = plannerProvider.parsePlan(plannerProvider.studyPlan!);
+    
+    if (parsedPlan == null) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
@@ -682,13 +664,15 @@ class _AiPlannerScreenState extends State<AiPlannerScreen>
           style: TextStyle(
             color: const Color(0xFF333333),
             fontSize: 16,
-
-              decoration: TextDecoration.none,
-              fontWeight: FontWeight.normal
+            decoration: TextDecoration.none,
+            fontWeight: FontWeight.normal
           ),
         ),
       );
     }
+    
+    planJson = parsedPlan;
+
 
     // Step 3: Extract topics safely
     final topics = (planJson['topics'] as List<dynamic>?)

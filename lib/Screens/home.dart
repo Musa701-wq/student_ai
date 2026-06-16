@@ -12,13 +12,13 @@ import '../Screens/profile/profileScreen.dart';
 import '../config/creditConfig.dart';
 import '../google_analytics.dart';
 import '../models/notesModel.dart';
-import '../services/adService.dart';
 import '../services/creditService.dart';
 import 'addPlans/addPlan.dart';
 import 'addPlans/showPlanFeed.dart';
 import 'addQuiz/addQuiz.dart';
 import 'addQuiz/quizListScreen.dart';
 import 'addnotes/add_notes_screen.dart';
+import 'dependency_graph/dependency_graph_hub_screen.dart';
 import 'mindmap/mindmap_screen.dart';
 import 'authwrapper.dart';
 import 'tutor/AITutorScreen.dart';
@@ -26,7 +26,6 @@ import 'homeworkHelper/homeworkScreen.dart';
 import 'notesFeed/notesFeedScreen.dart';
 import '../Providers/homeStatsProvider.dart';
 import 'notesFeed/showNotesDetail.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import 'syllabus/SyllabusHubScreen.dart';
@@ -37,7 +36,8 @@ import 'flashcards/FlashcardGeneratorScreen.dart';
 import 'eli5/ELI5Screen.dart';
 import 'infographic/InfographicHubScreen.dart';
 import 'dependency_graph/dependency_graph_screen.dart';
-import 'dependency_graph/dependency_graph_hub_screen.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../services/adService.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -321,16 +321,6 @@ class HomeBody extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLoggedIn = FirebaseAuth.instance.currentUser != null;
 
-    final localBannerAd = !isProUser ? AdService.createBannerAd() : null;
-
-    final adWidget = localBannerAd != null
-        ? Container(
-      alignment: Alignment.center,
-      width: localBannerAd.size.width.toDouble(),
-      height: localBannerAd.size.height.toDouble(),
-      child: AdWidget(ad: localBannerAd),
-    )
-        : const SizedBox();
 
     return FadeTransition(
       opacity: animation,
@@ -416,10 +406,6 @@ class HomeBody extends StatelessWidget {
 
                           // Show different content based on login status
                           if (isLoggedIn) ...[
-                            // *** BANNER AD - YOUR PROGRESS KE UPAR ***
-                            Center(child: adWidget),
-                            if (!isProUser) const SizedBox(height: 16),
-                            // *** END BANNER AD ***
                             _buildProgressOverview(
                               context,
                               screenWidth,
@@ -734,9 +720,9 @@ class HomeBody extends StatelessWidget {
                 colors: const [Color(0xFF2196F3), Color(0xFF03A9F4)],
                 onTap: () {
                   AnalyticsService.logCreatePlanClick();
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    AiPlannerScreen(),
+                    MaterialPageRoute(builder: (_) => AiPlannerScreen()),
                   );
                 },
                 context: context,
@@ -762,9 +748,9 @@ class HomeBody extends StatelessWidget {
                 colors: const [Color(0xFF9C27B0), Color(0xFF673AB7)],
                 onTap: () {
                   AnalyticsService.logCreateNoteClick();
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    AddNotesScreen(),
+                    MaterialPageRoute(builder: (_) => AddNotesScreen()),
                   );
                 },
                 context: context,
@@ -1687,9 +1673,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Get roadmap',
                 colors: const [Color(0xFF6C63FF), Color(0xFF4A47A3)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    const SyllabusHubScreen(),
+                    MaterialPageRoute(builder: (_) => const SyllabusHubScreen()),
                   );
                 },
                 context: context,
@@ -1701,9 +1687,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Plan your study',
                 colors: const [Color(0xFF2196F3), Color(0xFF03A9F4)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    AiPlannerScreen(),
+                    MaterialPageRoute(builder: (_) => AiPlannerScreen()),
                   );
                 },
                 context: context,
@@ -1714,9 +1700,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Test your knowledge',
                 colors: const [Color(0xFFFF9800), Color(0xFFFF5722)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    AddQuizScreen(),
+                    MaterialPageRoute(builder: (_) => AddQuizScreen()),
                   );
                 },
                 context: context,
@@ -1727,9 +1713,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Create new notes',
                 colors: const [Color(0xFF9C27B0), Color(0xFF673AB7)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    AddNotesScreen(),
+                    MaterialPageRoute(builder: (_) => AddNotesScreen()),
                   );
                 },
                 context: context,
@@ -1740,9 +1726,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Visualize your notes',
                 colors: const [Color(0xFFE91E63), Color(0xFFC2185B)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    MindmapScreen(),
+                    MaterialPageRoute(builder: (_) => MindmapScreen()),
                   );
                 },
                 context: context,
@@ -1814,9 +1800,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Guide steps',
                 colors: const [Color(0xFF4CAF50), Color(0xFF2E7D32)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    HomeworkHubScreen(),
+                    MaterialPageRoute(builder: (_) => HomeworkHubScreen()),
                   );
                 },
                 context: context,
@@ -1827,9 +1813,9 @@ class HomeBody extends StatelessWidget {
                 subtitle: 'Get help from your friends',
                 colors: const [Color(0xFFFF9800), Color(0xFFFF5722)],
                 onTap: () {
-                  AdService.showInterstitialAndNavigate(
+                  Navigator.push(
                     context,
-                    SharedContentHub(),
+                    MaterialPageRoute(builder: (_) => SharedContentHub()),
                   );
                 },
                 context: context,
@@ -2460,13 +2446,15 @@ class HomeBody extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
-            AdService.showInterstitialAndNavigate(
+            Navigator.push(
               context,
-              NoteDetailScreen(
-                note: note,
-                onShare: () {
-                  _openShareDialog(note, context);
-                },
+              MaterialPageRoute(
+                builder: (context) => NoteDetailScreen(
+                  note: note,
+                  onShare: () {
+                    _openShareDialog(note, context);
+                  },
+                ),
               ),
             );
           },

@@ -67,25 +67,11 @@ class StudyPlannerProvider with ChangeNotifier {
   }
 
   Map<String, dynamic>? parsePlan(String rawPlan) {
-    try {
-      String raw = rawPlan.trim();
-
-      // Clean Markdown blocks
-      if (raw.startsWith('```')) {
-        final lines = raw.split('\n');
-        lines.removeAt(0);
-        if (lines.isNotEmpty && lines.last.trim() == '```') lines.removeLast();
-        raw = lines.join('\n');
-      }
-
-      raw = raw.replaceAll('\n', '').trim();
-      raw = raw.replaceAll(RegExp(r',\s*}'), '}');
-      raw = raw.replaceAll(RegExp(r',\s*]'), ']');
-
-      return jsonDecode(raw);
-    } catch (_) {
-      return null;
+    final jsonObj = geminiService.tryExtractJson(rawPlan);
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
     }
+    return null;
   }
 
 }

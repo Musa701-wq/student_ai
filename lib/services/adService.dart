@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,10 +10,18 @@ class AdService {
   static BannerAd? bannerAd;
   static bool isPro = false;
 
-  // ✅ Centralized ad unit IDs
-  static const String _interstitialAdId = "ca-app-pub-3774337907915828/2528660957";
-  static const String _bannerAdId = "ca-app-pub-3774337907915828/1061049500";
-  static const String _rewardedAdId = "ca-app-pub-3774337907915828/4113205367";
+  // ✅ Centralized ad unit IDs (Standard Test IDs for Debug Mode)
+  static String get _interstitialAdId => kDebugMode 
+    ? "ca-app-pub-3940256099942544/4411468910" 
+    : "ca-app-pub-3774337907915828/2528660957";
+
+  static String get _bannerAdId => kDebugMode 
+    ? "ca-app-pub-3940256099942544/2934735716" 
+    : "ca-app-pub-3774337907915828/1061049500";
+
+  static String get _rewardedAdId => kDebugMode 
+    ? "ca-app-pub-3940256099942544/1712485313" 
+    : "ca-app-pub-3774337907915828/4113205367";
 
   static Future<void> init() async {
     print("loading ads");

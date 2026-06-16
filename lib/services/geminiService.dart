@@ -1,5 +1,6 @@
 // lib/services/gemini_service.dart
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,7 +9,11 @@ import '../services/creditService.dart';
 class GeminiService {
   // Hosted Backend Configuration
   String get _baseUrl {
-    return 'https://apps-model-server.mirdemy.com';
+    return dotenv.env['MENTOR_AI_BASE_URL'] ?? 'http://localhost:3000';
+  }
+
+  String get _accessKey {
+    return dotenv.env['MENTOR_AI_ACCESS_KEY'] ?? dotenv.env['SERVER_ACCESS_KEY'] ?? '';
   }
 
   /// Estimated token count from the last API call (prompt + response) / 4
@@ -16,13 +21,16 @@ class GeminiService {
   int get lastEstimatedTokens => _lastEstimatedTokens;
 
   /// Centralized method to call the hosted Gemini API
-  Future<String> _ask(String prompt) async {
-    final url = Uri.parse('$_baseUrl/api/gemini');
+  Future<String> _ask(String prompt, {String endpoint = '/api/mentorai/chat'}) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
 
     try {
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': _accessKey,
+        },
         body: jsonEncode({'prompt': prompt}),
       );
 
@@ -30,22 +38,29 @@ class GeminiService {
         final data = jsonDecode(response.body);
         final result = _cleanResponse(data['result'] ?? "No result from AI.");
 
-        // Token estimation: 1 token ≈ 4 characters
-        final inputTokens  = prompt.length ~/ 4;
-        final outputTokens = result.length ~/ 4;
-        _lastEstimatedTokens = inputTokens + outputTokens;
+        if (data['total_tokens'] != null && data['total_tokens'] is num) {
+          _lastEstimatedTokens = (data['total_tokens'] as num).toInt();
+        } else {
+          // Token estimation: 1 token ≈ 4 characters
+          final inputTokens  = prompt.length ~/ 4;
+          final outputTokens = result.length ~/ 4;
+          _lastEstimatedTokens = inputTokens + outputTokens;
+        }
 
         // Credit cost based on total tokens
         final creditCost = _calcCredits(_lastEstimatedTokens);
 
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('📤 INPUT  tokens  : $inputTokens  (${prompt.length} chars)');
-        print('📥 OUTPUT tokens  : $outputTokens  (${result.length} chars)');
+        print('📤 Endpoint       : $endpoint');
         print('🔢 TOTAL  tokens  : $_lastEstimatedTokens');
         print('💳 CREDITS to deduct: $creditCost');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         return result;
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized: Invalid API key');
+      } else if (response.statusCode == 422) {
+        throw Exception('Blocked by safety filters');
       } else {
         debugPrint('❌ Hosted API Error: ${response.statusCode} - ${response.body}');
         throw Exception('Error calling hosted model: ${response.body}');
@@ -88,7 +103,7 @@ Guidelines:
 3. If using bullets, use a dash (-) or a bullet point (•).
 4. Keep the structure clean and readable.
 """;
-    return await _ask(prompt);
+    return await _ask(prompt, endpoint: '/api/mentorai/summarize');
   }
 
   /// Chat with Gemini (Study Assistant mode)
@@ -188,16 +203,14 @@ Each object must look like this:
 """;
     
     String result = await _ask(prompt);
+    final jsonObj = tryExtractJson(result);
     
-    // Clean JSON formatting if model returns markdown
-    result = result.replaceAll("```json", "").replaceAll("```", "").trim();
-
-    try {
-      return List<Map<String, dynamic>>.from(json.decode(result));
-    } catch (e) {
-      debugPrint("❌ JSON parse error in Quiz generation: $e\nRaw text: $result");
-      return [];
+    if (jsonObj != null && jsonObj is List) {
+       return List<Map<String, dynamic>>.from(jsonObj);
     }
+
+    debugPrint("❌ Failed to parse quiz JSON. Raw text: $result");
+    return [];
   }
 
   /// Validate correct option text
@@ -253,7 +266,7 @@ Return the study plan **strictly in valid JSON only**, with no explanations, com
 }
 """;
 
-    return await _ask(prompt);
+    return await _ask(prompt, endpoint: '/api/mentorai/study-plan');
   }
 
   /// Generate Topic Dependency Graph from a topic
@@ -263,7 +276,8 @@ You are a Curriculum Architect AI. Generates a Topic Dependency Graph focusing o
 Break it down into subtopics and sequential concepts.
 Create edges strictly in a "Learn A before B" format (directed from prerequisite to the next topic).
 
-Return the output STRICTLY as a JSON object, no explanations, no markdown. The JSON must have this exact structure:
+STRICT INSTRUCTION: Return ONLY a valid JSON object. Do NOT include any introductory text, explanations, or conversational filler.
+The JSON must have this exact structure:
 {
   "nodes": [
     {"id": "1", "label": "Basic Concept"},
@@ -277,16 +291,14 @@ Make sure 'id' is a string. Ensure the graph represents a chronological learning
 """;
 
     String result = await _ask(prompt);
+    final jsonObj = tryExtractJson(result);
     
-    // Clean JSON formatting if model returns markdown
-    result = result.replaceAll("```json", "").replaceAll("```", "").trim();
-
-    try {
-      return Map<String, dynamic>.from(json.decode(result));
-    } catch (e) {
-      debugPrint("❌ JSON parse error in Topic Dependency Graph generation: $e\\nRaw text: $result");
-      return {"nodes": [], "edges": []};
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
     }
+
+    debugPrint("❌ Failed to extract valid JSON for Dependency Graph. Raw text: $result");
+    return {"nodes": [], "edges": []};
   }
 
   /// Generate Mindmap data from text
@@ -295,10 +307,8 @@ Make sure 'id' is a string. Ensure the graph represents a chronological learning
 You are a Mindmap AI. Analyze the following text and create a mindmap structure.
 Extract the main topic and its subtopics, and define relationships (edges) between them.
 
-Text to analyze:
-$text
-
-Return the output STRICTLY as a JSON object, no explanations, no markdown. The JSON must have this exact structure:
+STRICT INSTRUCTION: Return ONLY a valid JSON object. Do NOT include any introductory text, explanations, or conversational filler.
+The JSON must have this exact structure:
 {
   "nodes": [
     {"id": "1", "label": "Main Topic"},
@@ -309,19 +319,20 @@ Return the output STRICTLY as a JSON object, no explanations, no markdown. The J
   ]
 }
 Make sure 'id' is a string. Ensure the graph is logically connected like a tree.
+
+Text to analyze:
+$text
 """;
 
     String result = await _ask(prompt);
+    final jsonObj = tryExtractJson(result);
     
-    // Clean JSON formatting if model returns markdown
-    result = result.replaceAll("```json", "").replaceAll("```", "").trim();
-
-    try {
-      return Map<String, dynamic>.from(json.decode(result));
-    } catch (e) {
-      debugPrint("❌ JSON parse error in Mindmap generation: $e\nRaw text: $result");
-      return {"nodes": [], "edges": []};
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
     }
+
+    debugPrint("❌ Failed to extract valid JSON for Mindmap. Raw text: $result");
+    return {"nodes": [], "edges": []};
   }
 
   /// Breakdown Syllabus into a Roadmap
@@ -352,7 +363,8 @@ Requirements:
 
 Ensure the content is vibrant, easy to read, and formatted specifically for a modern mobile learning app.
 
-STRICT JSON OUTPUT ONLY:
+STRICT INSTRUCTION: Return ONLY a valid JSON object. Do NOT include any introductory text, explanations, or conversational filler.
+The JSON must have this exact structure:
 {
   "title": "Master Roadmap Title",
   "description": "Short, professional summary.",
@@ -379,16 +391,14 @@ STRICT JSON OUTPUT ONLY:
 """;
 
     String result = await _ask(prompt);
+    final jsonObj = tryExtractJson(result);
     
-    // Clean JSON formatting if model returns markdown
-    result = result.replaceAll("```json", "").replaceAll("```", "").trim();
-
-    try {
-      return Map<String, dynamic>.from(json.decode(result));
-    } catch (e) {
-      debugPrint("❌ JSON parse error in Syllabus Breakdown: $e\nRaw text: $result");
-      return {"title": "Error", "roadmap": [], "totalEstimatedHours": 0};
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
     }
+
+    debugPrint("❌ Failed to extract valid JSON for Syllabus Breakdown. Raw text: $result");
+    return {"title": "Error", "roadmap": [], "totalEstimatedHours": 0};
   }
 
   /// 🧹 Notes Cleaner: Converts messy notes into structured study notes
@@ -469,20 +479,17 @@ Example Output:
 """;
 
     String response = await _ask(prompt);
+    final jsonObj = tryExtractJson(response);
     
-    // Clean potential markdown blocks
-    response = response.replaceAll('```json', '').replaceAll('```', '').trim();
-    
-    try {
-      final List<dynamic> decoded = jsonDecode(response);
-      return decoded.map((item) => {
-        "question": item["question"].toString(),
-        "answer": item["answer"].toString(),
+    if (jsonObj != null && jsonObj is List) {
+       return jsonObj.map((item) => {
+        "question": (item["question"] ?? "").toString(),
+        "answer": (item["answer"] ?? "").toString(),
       }).toList();
-    } catch (e) {
-      debugPrint('Flashcard generation parsing error: $e. Raw response: $response');
-      throw Exception('Failed to generate flashcards structure.');
     }
+    
+    debugPrint('Flashcard generation parsing error. Raw response: $response');
+    return [];
   }
 
   /// 📊 Quiz Analysis: Analyzes quiz performance and provides insights
@@ -514,7 +521,8 @@ Instructions:
 3. **Topics to Re-visit**: Identify 3-5 specific topics or subtopics for immediate review.
 4. **Actionable Recommendations**: Provide sharp, actionable steps for improvement.
 
-STRICT JSON OUTPUT ONLY:
+STRICT INSTRUCTION: Return ONLY a valid JSON object. Do NOT include any introductory text, explanations, or conversational filler.
+The JSON must have this exact structure:
 {
   "mistakeAnalysis": [
     {"question": "...", "conceptMissed": "...", "explanation": "..."}
@@ -526,19 +534,19 @@ STRICT JSON OUTPUT ONLY:
 """;
 
     String result = await _ask(prompt);
-    result = result.replaceAll("```json", "").replaceAll("```", "").trim();
+    final jsonObj = tryExtractJson(result);
+    
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
+    }
 
-    try {
-      return Map<String, dynamic>.from(json.decode(result));
-    } catch (e) {
-      debugPrint("❌ JSON parse error in Quiz Analysis: $e\\nRaw text: \$result");
-      return {
+    debugPrint("❌ Failed to parse quiz JSON. Raw text: $result");
+    return {
         "mistakeAnalysis": [],
         "weaknesses": [],
         "topicsToRevisit": ["Review your primary materials."],
         "recommendations": ["Review your incorrect answers for deeper understanding."]
       };
-    }
   }
 
   /// 👶 ELI5: Explain Like I'm 5 (Structured Upgrade)
@@ -567,61 +575,97 @@ IMPORTANT:
     
     // We use the production Gemini endpoint which handles the model selection internally.
     final response = await _ask(prompt);
+    final jsonObj = tryExtractJson(response);
     
-    try {
-      // Robust JSON extraction
-      String cleanedResponse = response.trim();
-      final jsonRegex = RegExp(r'\{(?:[^{}]|(\{(?:[^{}]|(\{[^{}]*\}))*\}))*\}');
-      final match = jsonRegex.firstMatch(cleanedResponse);
-      
-      if (match != null) {
-        cleanedResponse = match.group(0)!;
-      }
-      
-      return jsonDecode(cleanedResponse);
-    } catch (e) {
-      // Fallback in case of parsing error
-      return {
-        "definition": "Could not parse detailed response.",
-        "explanation": response,
-        "example": "N/A",
-        "useCase": "N/A",
-        "imageRequired": false,
-        "imageSearchQuery": ""
-      };
+    if (jsonObj != null && jsonObj is Map<String, dynamic>) {
+       return jsonObj;
     }
+
+    // Fallback in case of parsing error
+    return {
+      "definition": "Could not parse detailed response.",
+      "explanation": response,
+      "example": "N/A",
+      "useCase": "N/A",
+      "imageRequired": false,
+      "imageSearchQuery": ""
+    };
   }
 
-  /// 🎨 Generate Image via Gemini Developer API (Imagen 3)
-  Future<String?> generateImage(String prompt) async {
-    final apiKey = dotenv.env['GEMINI_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      debugPrint('No GEMINI_API_KEY found in .env');
-      return null;
-    }
+  /// 🛠️ Robust JSON Extractor: Handles markdown and conversational filler
+  dynamic tryExtractJson(String text) {
+    if (text.isEmpty) return null;
 
-    final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$apiKey');
+    try {
+      // 1. Fast Path: Direct parse
+      String cleaned = text.trim();
+      try {
+        return jsonDecode(cleaned);
+      } catch (_) {}
+
+      // 2. Clean common markdown pollution
+      cleaned = cleaned.replaceAll(RegExp(r'```(?:json)?', caseSensitive: false), '')
+                       .replaceAll('```', '')
+                       .trim();
+      try {
+        return jsonDecode(cleaned);
+      } catch (_) {}
+
+      // 3. Robust Fallback: Extract between first and last curly braces (Objects)
+      int firstBrace = cleaned.indexOf('{');
+      int lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+        String possibleJson = cleaned.substring(firstBrace, lastBrace + 1);
+        try {
+          return jsonDecode(possibleJson);
+        } catch (_) {}
+      }
+
+      // 4. Robust Fallback: Extract between first and last square brackets (Arrays)
+      int firstBracket = cleaned.indexOf('[');
+      int lastBracket = cleaned.lastIndexOf(']');
+      if (firstBracket != -1 && lastBracket != -1 && lastBracket > firstBracket) {
+        String possibleJson = cleaned.substring(firstBracket, lastBracket + 1);
+        try {
+          return jsonDecode(possibleJson);
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("❌ Error in tryExtractJson: $e");
+    }
+    
+    return null;
+  }
+
+  String _getMimeType(String path) {
+    if (path.toLowerCase().endsWith('.png'))  return 'image/png';
+    if (path.toLowerCase().endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  /// 🎨 Generate Image via MentorAI API Server
+  Future<String?> generateImage(String prompt, {File? referenceImage}) async {
+    final url = Uri.parse('$_baseUrl/api/mentorai/generate-image');
 
     debugPrint('🖼️ Generating image for: $prompt');
     debugPrint('🔗 URL: $url');
 
     try {
-      final requestBody = jsonEncode({
-        "contents": [
-          {
-            "role": "user",
-            "parts": [
-              {"text": "Generate a high-quality educational illustration for: $prompt. Output the image as base64 inline data."}
-            ]
-          }
-        ]
-      });
+      final Map<String, dynamic> body = {'prompt': prompt};
+
+      if (referenceImage != null) {
+        final bytes = await referenceImage.readAsBytes();
+        body['image_base64'] = base64Encode(bytes);
+        body['mime_type'] = _getMimeType(referenceImage.path);
+      }
 
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
-        body: requestBody,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': _accessKey,
+        },
+        body: jsonEncode(body),
       );
 
       debugPrint('📡 Status Code: ${response.statusCode}');
@@ -630,19 +674,15 @@ IMPORTANT:
         final data = jsonDecode(response.body);
         debugPrint('✅ Response Received');
         
-        final candidates = data['candidates'] as List?;
-        if (candidates != null && candidates.isNotEmpty) {
-          final parts = candidates[0]['content']['parts'] as List?;
-          if (parts != null && parts.isNotEmpty) {
-            for (var part in parts) {
-              if (part['inlineData'] != null) {
-                debugPrint('📸 Image data found!');
-                return part['inlineData']['data'] as String?;
-              }
-            }
-          }
+        if (data['total_tokens'] != null && data['total_tokens'] is num) {
+          _lastEstimatedTokens = (data['total_tokens'] as num).toInt();
         }
-        debugPrint('⚠️ No inlineData found in response parts. Body: ${response.body}');
+
+        return data['result'] as String?; // Pure base64 string provided by proxy
+      } else if (response.statusCode == 401) {
+        debugPrint('❌ Unauthorized: Invalid API key');
+      } else if (response.statusCode == 422) {
+        debugPrint('❌ Blocked by safety filters');
       } else {
         debugPrint('❌ HTTP Error: ${response.statusCode} - ${response.body}');
       }
@@ -685,7 +725,7 @@ Keep it under 30 words if possible.
 Snippet:
 "$text"
 """;
-    return await _ask(prompt);
+    return await _ask(prompt, endpoint: '/api/mentorai/summarize');
   }
 }
 
